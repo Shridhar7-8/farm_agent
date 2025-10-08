@@ -2,7 +2,10 @@ import asyncio
 import os  
 import aiohttp  
 from typing import Optional  
-  
+import openai  
+from openai import OpenAI
+from typing import List
+from pydantic import BaseModel, Field
 from pipecat.pipeline.pipeline import Pipeline  
 from pipecat.pipeline.runner import PipelineRunner  
 from pipecat.pipeline.task import PipelineTask, PipelineParams  
@@ -15,27 +18,107 @@ from pipecat.frames.frames import LLMMessagesAppendFrame, LLMRunFrame
 from pipecat.audio.vad.silero import SileroVADAnalyzer  
 from pipecat.audio.vad.vad_analyzer import VADParams  
 from pipecat.adapters.schemas.tools_schema import ToolsSchema, FunctionSchema, AdapterType  
-from pipecat.observers.rtvi_observer import RTVIObserver  
-  
+from pipecat.processors.frameworks.rtvi import RTVIConfig, RTVIObserver, RTVIProcessor, RTVIServerMessageFrame, RTVIAction, RTVIActionArgument
+from pipecat.runner.utils import create_transport
+
 # Services  
-from pipecat.services.deepgram import DeepgramSTTService  
-from pipecat.services.google import GoogleLLMService  
-from pipecat.services.elevenlabs import ElevenLabsTTSService  
+from pipecat.services.deepgram.stt import DeepgramSTTService  
+from pipecat.services.google.llm import GoogleLLMService  
+from pipecat.services.elevenlabs.tts import ElevenLabsTTSService  
 from pipecat.services.heygen.video import HeyGenVideoService  
 from pipecat.services.heygen.api import NewSessionRequest, AvatarQuality  
 from pipecat.transports.services.daily import DailyTransport, DailyParams  
-  
+from pipecat.audio.turn.smart_turn.base_smart_turn import SmartTurnParams
+from pipecat.audio.turn.smart_turn.local_smart_turn_v3 import LocalSmartTurnAnalyzerV3
 # RTVI  
 from pipecat.processors.frameworks.rtvi import RTVIProcessor, RTVIConfig  
-  
+from pipecat.transports.base_transport import BaseTransport, TransportParams
+from pipecat.transports.daily.transport import DailyParams, DailyTransport
+from dotenv import load_dotenv  
+from pipecat.runner.types import RunnerArguments
+load_dotenv()
 from loguru import logger  
-  
-  
-# Farm management function handlers  
-async def get_weather_handler(params):  
-    """Get weather forecast for farm location."""  
-    location = params.arguments.get("location", "")  
-    days = params.arguments.get("days", 7)  
+
+
+rtvi_processor: None
+context = []
+
+
+class FollowUpQuestions(BaseModel):
+    questions: List[str]
+
+class OpenAIFollowUpProcessor:
+    """Follow-up question generator using OpenAI API with Pydantic."""
+
+    def __init__(self):
+        self.api_key = os.getenv("OPENAI_API_KEY")
+        if not self.api_key:
+            raise ValueError("OPENAI_API_KEY environment variable is required")
+
+        self.client = openai.OpenAI(api_key=self.api_key)
+        self.model = "gpt-4o-mini"
+
+    async def generate_follow_ups(self, assistant_response: str):
+        """Generate follow-up questions using OpenAI with structured output."""
+        global context
+
+        context.append(assistant_response)
+        if len(context) > 5:
+            context.pop(0)
+
+        try:
+            prompt = f"""Based on this AI assistant response, generate 2-3 short, relevant follow-up questions that users might naturally ask next.
+
+            Assistant Response: "{assistant_response}"
+            Context: {context}
+
+            Generate natural, conversational questions that would logically follow from this response. Keep them empathetic and engaging."""
+
+            response = self.client.beta.chat.completions.parse(
+                model=self.model,
+                messages=[{"role": "user", "content": prompt}],
+                response_format=FollowUpQuestions,
+                temperature=0.7
+            )
+
+            questions_obj = response.choices[0].message.parsed
+            if questions_obj and questions_obj.questions and len(questions_obj.questions) >= 2:
+                return questions_obj.questions[:3]
+            
+            # Fallback
+            return ["Tell me more about that", "What else should I know?"]
+
+        except Exception as e:
+            logger.error(f"Error generating follow-ups: {e}")
+            return ["Can you explain further?", "What's next?"]
+        
+
+async def send_follow_up_questions(questions: list):
+    """Send follow-up questions to the UI."""
+    global rtvi_processor
+    
+    if rtvi_processor and questions:
+        try:
+            frame = RTVIServerMessageFrame(
+                data={
+                    "type": "ui_update_follow_up",
+                    "payload": {
+                        "questions": questions,
+                        "timestamp": datetime.now().isoformat(),
+                    },
+                }
+            )
+            await rtvi_processor.push_frame(frame)
+            logger.debug(f"Sent follow-up questions: {questions}")
+        except Exception as e:
+            logger.error(f"Error sending follow-up questions: {e}")
+
+
+# Farm management function handlers
+async def get_weather_handler(params):
+    """Get weather forecast for farm location."""
+    location = params.arguments.get("location", "")
+    days = params.arguments.get("days", 7)
       
     # Your weather API integration here  
     result = f"Weather forecast for {location} for next {days} days: Sunny, 75°F"  
@@ -60,33 +143,61 @@ async def get_sensor_data_handler(params):
     await params.result_callback(result)  
   
   
-async def main():  
-    """Main application entry point."""  
+# async def main():  
+#     """Main application entry point."""  
       
-    # Daily transport with VAD configuration  
-    transport = DailyTransport(  
-        room_url=os.getenv("DAILY_ROOM_URL"),  
-        token=os.getenv("DAILY_TOKEN"),  
-        bot_name="Farm Assistant",  
-        params=DailyParams(  
-            audio_in_enabled=True,  
-            audio_out_enabled=True,  
-            video_out_enabled=True,  
-            video_out_is_live=True,  
-            video_out_width=1280,  
-            video_out_height=720,  
-            vad_analyzer=SileroVADAnalyzer(  
-                params=VADParams(  
-                    confidence=0.5,  
-                    min_volume=0.5,  
-                    start_secs=0.2,  
-                    stop_secs=0.3  
-                )  
-            ),  
-        ),  
-    )  
+#     # Daily transport with VAD configuration  
+#     transport = DailyTransport(  
+#         room_url=os.getenv("DAILY_ROOM_URL"),  
+#         token=os.getenv("DAILY_TOKEN"),  
+#         bot_name="Farm Assistant",  
+#         params=DailyParams(  
+#             audio_in_enabled=True,  
+#             audio_out_enabled=True,  
+#             video_out_enabled=True,  
+#             video_out_is_live=True,  
+#             video_out_width=1280,  
+#             video_out_height=720,  
+#             vad_analyzer=SileroVADAnalyzer(  
+#                 params=VADParams(  
+#                     confidence=0.5,  
+#                     min_volume=0.5,  
+#                     start_secs=0.2,  
+#                     stop_secs=0.3  
+#                 )  
+#             ),  
+#         ),  
+#     )  
   
-    async with aiohttp.ClientSession() as session:  
+#     async with aiohttp.ClientSession() as session:  
+transport_params = {
+    "daily": lambda: DailyParams(
+        audio_in_enabled=True,
+        audio_out_enabled=True,
+        video_out_enabled=True,
+        video_out_is_live=True,
+        video_out_width=1280,
+        video_out_height=720,
+        video_out_bitrate=2_000_000,  # 2MBps
+        vad_analyzer=SileroVADAnalyzer(params=VADParams(stop_secs=0.2)),
+        turn_analyzer=LocalSmartTurnAnalyzerV3(params=SmartTurnParams()),
+    ),
+    "webrtc": lambda: TransportParams(
+        audio_in_enabled=True,
+        audio_out_enabled=True,
+        video_out_enabled=True,
+        video_out_is_live=True,
+        video_out_width=1280,
+        video_out_height=720,
+        vad_analyzer=SileroVADAnalyzer(params=VADParams(stop_secs=0.2)),
+        turn_analyzer=LocalSmartTurnAnalyzerV3(params=SmartTurnParams()),
+    ),
+}
+
+
+async def run_bot(transport: BaseTransport, runner_args: RunnerArguments):
+    logger.info(f"Starting bot")
+    async with aiohttp.ClientSession() as session:
         # Initialize STT service  
         stt = DeepgramSTTService(api_key=os.getenv("DEEPGRAM_API_KEY") or "")  
   
@@ -189,7 +300,10 @@ async def main():
                 quality=AvatarQuality.high,  
             ),  
         )  
-  
+        
+         # Follow-up processor
+        follow_up_processor = OpenAIFollowUpProcessor()
+
         # LLM Context and Aggregator  
         context = OpenAILLMContext(  
             [{"role": "user", "content": "Say hello and introduce yourself as a farm management assistant."}],  
@@ -228,7 +342,15 @@ async def main():
                 allow_interruptions=True,  
             ),  
             observers=[RTVIObserver(rtvi)],  
-        )  
+        )
+
+        async def generate_and_send_follow_ups(assistant_response: str):
+            """Generate and send follow-up questions."""
+            try:
+                questions = await follow_up_processor.generate_follow_ups(assistant_response)
+                await send_follow_up_questions(questions)
+            except Exception as e:
+                logger.error(f"Error in follow-up generation: {e}")
   
         # Event handlers  
         @rtvi.event_handler("on_client_ready")  
@@ -241,6 +363,10 @@ async def main():
             """Log transcript updates."""  
             for message in frame.messages:  
                 logger.info(f"TRANSCRIPT: {message.role}: {message.content}")  
+
+                # If assistant message, generate follow-up questions
+                if message.role == "assistant" and message.content:
+                    await generate_and_send_follow_ups(message.content)
   
         @transport.event_handler("on_client_connected")  
         async def on_client_connected(transport, client):  
@@ -257,10 +383,12 @@ async def main():
         logger.info("🚀 Starting Farm Management AI Assistant...")  
         runner = PipelineRunner()  
         await runner.run(task)  
-  
-  
-if __name__ == "__main__":  
-    # Required environment variables:  
-    # DAILY_ROOM_URL, DAILY_TOKEN, DEEPGRAM_API_KEY,   
-    # GOOGLE_API_KEY, ELEVENLABS_API_KEY, HEYGEN_API_KEY  
+
+async def bot(runner_args: RunnerArguments):
+    """Main bot entry point compatible with Pipecat Cloud."""
+    transport = await create_transport(runner_args, transport_params)
+    await run_bot(transport, runner_args)
+
+if __name__ == "__main__":
+    from pipecat.runner.run import main
     asyncio.run(main())
