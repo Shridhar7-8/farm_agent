@@ -1,13 +1,13 @@
 from google.adk.agents import Agent, LlmAgent
 from google.adk.tools import agent_tool
-from .config import config
-from .tools import (
+from config import config
+from tools import (
     weather_tool, market_price_tool, customer_data_tool, 
     agricultural_knowledge_tool, validated_farming_plan_tool, 
     farming_plan_tool, evaluate_advice_quality_tool
 )
-from .callbacks import combined_callback
-from .utils import VertexAIFactory
+from callbacks import combined_callback
+from utils import VertexAIFactory
 import logging
 
 logger = logging.getLogger('farm_agent.agents')

@@ -2,8 +2,8 @@ import uuid
 from datetime import datetime
 from typing import Dict, Any, List
 import logging
-from .config import config
-from .utils import VertexAIFactory, JsonUtils, logger
+from config import config
+from utils import VertexAIFactory, JsonUtils, logger
 
 class ConversationMemoryManager:
     """

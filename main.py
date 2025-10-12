@@ -4,11 +4,11 @@ import logging
 from typing import Dict, Any
 from google.adk.runners import InMemoryRunner
 from google.genai import types
-from .logging_setup import setup_logging
-from .config import config
-from .agents import farm_management_agent
-from .memory import enhanced_session_manager
-from .utils import logger, JsonUtils
+from logging_setup import setup_logging
+from config import config
+from agents import farm_management_agent
+from memory import enhanced_session_manager
+from utils import logger, JsonUtils
 
 setup_logging(debug_mode=True)  # Toggle via env
 

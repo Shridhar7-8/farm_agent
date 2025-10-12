@@ -1,7 +1,7 @@
 from typing import Dict, Any, Optional
 import logging
-from .config import config
-from .utils import VertexAIFactory, JsonUtils, logger
+from config import config
+from utils import VertexAIFactory, JsonUtils, logger
 
 # ============================================================================
 # SYSTEM INSTRUCTION CONSTANTS

@@ -2,9 +2,9 @@ import aiohttp
 import random
 from datetime import datetime
 from typing import Optional, Dict, Any
-from .config import config
-from .models import WeatherData, MarketPriceData, HourlyWeatherData
-from .utils import logger
+from config import config
+from models import WeatherData, MarketPriceData, HourlyWeatherData
+from utils import logger
 
 class SharedAsyncClient:
     """Singleton for aiohttp sessions (orthogonality, reuse)."""

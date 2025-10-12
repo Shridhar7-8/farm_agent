@@ -1,7 +1,7 @@
 from pydantic import BaseModel, Field
 from typing import List
-from .config import config
-from .utils import logger  # Assuming logger from utils
+from config import config
+from utils import logger  # Assuming logger from utils
 import logging
 
 

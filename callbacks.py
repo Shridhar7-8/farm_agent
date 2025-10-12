@@ -2,11 +2,11 @@ from google.adk.agents.callback_context import CallbackContext
 from google.adk.models import LlmRequest, LlmResponse
 from google.genai import types
 import uuid
-from .utils import JsonUtils
+from utils import JsonUtils
 from typing import Optional
-from .guardrails import guardrail_checker, GuardrailEvaluation
-from .memory import enhanced_session_manager
-from .utils import logger
+from guardrails import guardrail_checker, GuardrailEvaluation
+from memory import enhanced_session_manager
+from utils import logger
 
 def combined_callback(callback_context: CallbackContext, llm_request: LlmRequest) -> Optional[LlmResponse]:
     """Merged: Guardrail -> Memory Injection (DRY, orthogonal)."""

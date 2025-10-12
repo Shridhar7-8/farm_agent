@@ -3,7 +3,7 @@ import re
 import logging
 from typing import Dict, Any, Optional
 from datetime import datetime
-from farm_agent.config import config
+from config import config
 import vertexai
 from vertexai.generative_models import GenerativeModel
 
