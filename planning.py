@@ -2,6 +2,7 @@ from typing import Dict, Any, Optional
 import logging
 from config import config
 from utils import VertexAIFactory, JsonUtils, logger
+from observability import observe_if_available
 
 # ============================================================================
 # SYSTEM INSTRUCTION CONSTANTS
@@ -144,6 +145,7 @@ class FarmingPlanningAgent:
         self.logger = logging.getLogger('farm_agent.planning')
         self.logger.info("FarmingPlanningAgent initialized")
         
+    @observe_if_available(name="create_farming_plan")
     async def create_farming_plan(self, problem_description: str, context: Optional[Dict] = None) -> Dict[str, Any]:
         """
         Decomposes a complex farming problem into actionable steps.
@@ -247,6 +249,7 @@ class ReflectionAgent:
         self.logger = logging.getLogger('farm_agent.planning')
         self.logger.info("ReflectionAgent initialized")
         
+    @observe_if_available(name="evaluate_agricultural_advice")
     async def evaluate_agricultural_advice(self, advice: str, context: Optional[Dict] = None) -> Dict[str, Any]:
         """
         Evaluates agricultural advice using producer-critic methodology.
@@ -352,6 +355,7 @@ class SequentialPlanningAgent:
         """Display real-time progress to user."""
         print(f"\n{status} **{phase}:** {message}")
         
+    @observe_if_available(name="create_validated_agricultural_plan")
     async def create_validated_agricultural_plan(self, problem_description: str, context: Optional[Dict] = None) -> Dict[str, Any]:
         """
         Creates a comprehensive, quality-validated agricultural plan with real-time progress.

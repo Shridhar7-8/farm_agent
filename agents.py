@@ -8,12 +8,14 @@ from tools import (
 )
 from callbacks import combined_callback
 from utils import VertexAIFactory
+from observability import observe_if_available
 import logging
 
 logger = logging.getLogger('farm_agent.agents')
 
 class AgentFactory:
     @staticmethod
+    @observe_if_available(name="agent_creation")
     def create_base_agent(name: str, instruction: str, tools: list, output_key: str) -> Agent:
         """Factory for creating base Agent instances (DRY)."""
         return Agent(

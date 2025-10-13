@@ -12,8 +12,12 @@ from agents import farm_management_agent
 from memory import enhanced_session_manager
 from utils import logger, JsonUtils
 from processors import cleanup_all_processors
+from observability import initialize_laminar, observe_if_available, log_observability_status
 
 setup_logging(debug_mode=True)  # Toggle via env
+
+# Initialize Laminar observability (non-blocking)
+initialize_laminar()
 
 # Global cleanup flag
 cleanup_in_progress = False
@@ -75,6 +79,7 @@ def signal_handler(signum, frame):
         print("👋 Cleanup completed. Goodbye!")
         sys.exit(0)
 
+@observe_if_available(name="extract_conversation_context")
 def extract_context_from_conversation(query: str, response: str) -> Dict[str, Any]:
     """Simple keyword-based context extraction for memory enhancement."""
     extracted = {}
@@ -99,6 +104,7 @@ def extract_context_from_conversation(query: str, response: str) -> Dict[str, An
     
     return extracted
 
+@observe_if_available(name="farm_agent_execution")
 async def run_agent_async_with_memory(runner: InMemoryRunner, user_query: str, user_id: str = "farmer_123") -> str:
     """Core runner (streamlined event handling)."""
     session, memory_manager = await enhanced_session_manager.get_or_create_session(user_id, runner)
@@ -224,6 +230,7 @@ async def run_agent_async_with_memory(runner: InMemoryRunner, user_query: str, u
         
         return error_msg
 
+@observe_if_available(name="farm_management_system")
 async def main():
     """Main function demonstrating the farm management system with guardrails."""
     # Register signal handlers for graceful shutdown
@@ -235,16 +242,26 @@ async def main():
     root_logger.info("System components: Guardrails, Memory, Planning, RAG, Tools")
     root_logger.debug("🔍 DEBUG MODE ACTIVE: Full LLM interaction logging enabled")
     
+    # Log observability status
+    log_observability_status()
+    
     print("=" * 70)
     print("🔍 DEBUG MODE: 🌾 GOOGLE ADK FARM MANAGEMENT SYSTEM WITH GUARDRAILS")
     print("=" * 70)
     print("🔍 DEBUG LOGGING ENABLED: You'll see detailed LLM interactions")
+    from observability import is_observability_enabled
+    if is_observability_enabled():
+        print("📊 OBSERVABILITY ENABLED: Laminar tracing active for performance monitoring")
+    else:
+        print("📊 OBSERVABILITY DISABLED: Set LMNR_PROJECT_API_KEY to enable tracing")
     print("=" * 70)
     print("\nThis system includes:")
     print("  ✓ Input validation and safety guardrails")
     print("  ✓ Domain-specific enforcement (agriculture only)")
     print("  ✓ Protection against jailbreaking attempts")
     print("  ✓ Privacy and security checks")
+    if is_observability_enabled():
+        print("  ✓ Performance monitoring and LLM call tracing")
     print("=" * 70)
     
     runner = InMemoryRunner(farm_management_agent, app_name="farm_management_app")

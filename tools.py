@@ -9,12 +9,14 @@ from vertexai import rag
 from vertexai.generative_models import GenerativeModel, Tool
 import vertexai
 import logging
+from observability import observe_if_available
 
 
 rag_logger = logging.getLogger('farm_agent.tools.rag')
 
 
 
+@observe_if_available(name="weather_tool")
 async def get_weather_tool(location: str, tool_context) -> Dict[str, Any]:
     """Get weather information for a location."""
     weather_data = await weather_processor.get_weather_data(location)
@@ -34,6 +36,7 @@ async def get_weather_tool(location: str, tool_context) -> Dict[str, Any]:
         "wind_speed": weather_data.wind_speed
     }
 
+@observe_if_available(name="market_price_tool")
 async def get_market_price_tool(crop_type: str, tool_context) -> Dict[str, Any]:
     """Get market prices for a crop."""
     price_data = await market_price_processor.get_market_price(crop_type)
@@ -53,6 +56,7 @@ async def get_market_price_tool(crop_type: str, tool_context) -> Dict[str, Any]:
         "arrival": price_data.arrival
     }
 
+@observe_if_available(name="customer_data_tool")
 async def get_customer_data_tool(customer_id: str, tool_context) -> Dict[str, Any]:
     """Get customer data from Google Sheets."""
     customer_data = await sheet_processor.get_customer_data(customer_id)
@@ -65,6 +69,7 @@ async def get_customer_data_tool(customer_id: str, tool_context) -> Dict[str, An
         "customer_data": customer_data
     }
 
+@observe_if_available(name="agricultural_rag_tool")
 async def get_agricultural_knowledge_tool(agricultural_query: str, tool_context) -> Dict[str, Any]:
     """Get agricultural knowledge using RAG from the agricultural corpus."""
     try:
@@ -154,6 +159,7 @@ async def get_agricultural_knowledge_tool(agricultural_query: str, tool_context)
             "message": f"Error accessing agricultural knowledge: {str(e)}"
         }
 
+@observe_if_available(name="validated_farming_plan_tool")
 async def get_validated_farming_plan_tool(problem_description: str, tool_context) -> Dict[str, Any]:
     """Get a comprehensive, quality-validated farming plan using sequential planning+reflection."""
     
@@ -187,6 +193,7 @@ async def get_validated_farming_plan_tool(problem_description: str, tool_context
             "message": result.get("message", "Failed to create validated farming plan")
         }
 
+@observe_if_available(name="farming_plan_tool")
 async def get_farming_plan_tool(problem_description: str, tool_context) -> Dict[str, Any]:
     """Get a comprehensive farming plan for complex agricultural challenges."""
     
@@ -215,6 +222,7 @@ async def get_farming_plan_tool(problem_description: str, tool_context) -> Dict[
             "message": plan_result.get("message", "Failed to create farming plan")
         }
 
+@observe_if_available(name="advice_quality_evaluation_tool")
 async def evaluate_advice_quality_tool(advice_text: str, tool_context) -> Dict[str, Any]:
     """Evaluate the quality of agricultural advice using reflection agent."""
     

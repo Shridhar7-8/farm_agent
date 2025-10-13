@@ -5,6 +5,7 @@ from typing import Optional, Dict, Any
 from config import config
 from models import WeatherData, MarketPriceData, HourlyWeatherData
 from utils import logger
+from observability import observe_if_available
 
 class SharedAsyncClient:
     """Singleton for aiohttp sessions with proper lifecycle management."""
@@ -94,6 +95,7 @@ class MarketPriceProcessor:
             'Tomato': {'markets': ['Karnataka', 'Andhra Pradesh', 'Maharashtra'], 'price_range': (1000, 2000)},
         }
 
+    @observe_if_available(name="get_market_price")
     async def get_market_price(self, crop_name: str) -> Optional[MarketPriceData]:
         """Get market price for a given crop from Indian mandis."""
         try:
@@ -244,6 +246,7 @@ class WeatherDataProcessor:
         }
         return weather_codes.get(weather_code, "Unknown")
 
+    @observe_if_available(name="get_weather_data")
     async def get_weather_data(self, location: str) -> Optional[WeatherData]:
         """Get weather data for a given location."""
         try:
@@ -380,6 +383,7 @@ class SheetDataProcessor:
         self.cache: Dict[str, tuple[Dict[str, Any], datetime]] = {}
         self.cache_duration = config.cache_duration_sheets
     
+    @observe_if_available(name="get_customer_data")
     async def get_customer_data(self, customer_id: str) -> Optional[Dict[str, Any]]:
         """Get customer data from Google Sheets via Cloud Run function."""
         try:
