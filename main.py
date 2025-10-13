@@ -1,6 +1,8 @@
 import asyncio
 import uuid
 import logging
+import signal
+import sys
 from typing import Dict, Any
 from google.adk.runners import InMemoryRunner
 from google.genai import types
@@ -9,8 +11,69 @@ from config import config
 from agents import farm_management_agent
 from memory import enhanced_session_manager
 from utils import logger, JsonUtils
+from processors import cleanup_all_processors
 
 setup_logging(debug_mode=True)  # Toggle via env
+
+# Global cleanup flag
+cleanup_in_progress = False
+
+async def cleanup_application():
+    """Clean up all application resources."""
+    global cleanup_in_progress
+    if cleanup_in_progress:
+        return
+    
+    cleanup_in_progress = True
+    logger.info("Starting application cleanup...")
+    
+    try:
+        # Clean up HTTP sessions and processors
+        await cleanup_all_processors()
+        
+        # Force cleanup of any remaining aiohttp sessions
+        import gc
+        import aiohttp
+        
+        # Collect garbage to ensure sessions are cleaned up
+        collected = gc.collect()
+        logger.info(f"Garbage collection freed {collected} objects")
+        
+        # Try to close any remaining aiohttp sessions
+        for obj in gc.get_objects():
+            if isinstance(obj, aiohttp.ClientSession) and not obj.closed:
+                try:
+                    await obj.close()
+                    logger.info("Force-closed lingering aiohttp session")
+                except Exception as session_error:
+                    logger.warning(f"Failed to close lingering session: {session_error}")
+        
+        logger.info("Application cleanup completed successfully")
+    except Exception as e:
+        logger.error(f"Error during application cleanup: {e}")
+    finally:
+        cleanup_in_progress = False
+
+def signal_handler(signum, frame):
+    """Handle shutdown signals gracefully."""
+    print("\n\n🛑 Shutdown signal received. Cleaning up...")
+    logger.info(f"Received signal {signum}, initiating graceful shutdown")
+    
+    # Force cleanup and exit immediately
+    try:
+        # Try to run cleanup synchronously to avoid async issues
+        import asyncio
+        if asyncio._get_running_loop() is None:
+            asyncio.run(cleanup_application())
+        else:
+            # If we're in an async context, we need to handle it differently
+            print("🔄 Forcing immediate cleanup...")
+            logger.warning("Forcing immediate cleanup due to signal")
+    except Exception as e:
+        logger.error(f"Signal handler cleanup failed: {e}")
+    finally:
+        print("👋 Cleanup completed. Goodbye!")
+        sys.exit(0)
 
 def extract_context_from_conversation(query: str, response: str) -> Dict[str, Any]:
     """Simple keyword-based context extraction for memory enhancement."""
@@ -150,10 +213,23 @@ async def run_agent_async_with_memory(runner: InMemoryRunner, user_query: str, u
         error_msg = f"An error occurred: {e}"
         logger.error(error_msg, exc_info=True)
         print(f"❌ {error_msg}")
+        
+        # Ensure cleanup if critical error occurs
+        if "ClientSession" in str(e) or "unclosed" in str(e).lower():
+            logger.warning("Detected HTTP session issue, triggering cleanup")
+            try:
+                await cleanup_application()
+            except Exception as cleanup_error:
+                logger.error(f"Cleanup failed: {cleanup_error}")
+        
         return error_msg
 
 async def main():
     """Main function demonstrating the farm management system with guardrails."""
+    # Register signal handlers for graceful shutdown
+    signal.signal(signal.SIGINT, signal_handler)
+    signal.signal(signal.SIGTERM, signal_handler)
+    
     root_logger = logging.getLogger('farm_agent')
     root_logger.info("Starting Google ADK Farm Management System")
     root_logger.info("System components: Guardrails, Memory, Planning, RAG, Tools")
@@ -221,7 +297,9 @@ async def main():
                 continue
                 
             if user_query.lower() in ['exit', 'quit', 'bye', 'goodbye']:
-                print("\n👋 Thank you for using the Farm Management System!")
+                print("\n� Cleaning up system resources...")
+                await cleanup_application()
+                print("�👋 Thank you for using the Farm Management System!")
                 print("🌾 Happy Farming!\n")
                 break
             
@@ -229,14 +307,29 @@ async def main():
             result = await run_agent_async_with_memory(runner, user_query, user_id="farmer_123")
             
         except KeyboardInterrupt:
-            print("\n\n👋 Session interrupted. Goodbye!")
+            print("\n\n� Session interrupted. Cleaning up...")
+            await cleanup_application()
+            print("👋 Goodbye!")
             break
         except Exception as e:
             print(f"\n❌ Error: {e}")
             continue
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    try:
+        asyncio.run(main())
+    except Exception as e:
+        print(f"\n❌ Application error: {e}")
+        logger.error(f"Application error: {e}", exc_info=True)
+    finally:
+        # Force cleanup on exit
+        try:
+            print("\n🔄 Performing final system cleanup...")
+            asyncio.run(cleanup_application())
+            print("✅ Cleanup completed.")
+        except Exception as cleanup_error:
+            print(f"⚠️ Cleanup warning: {cleanup_error}")
+            logger.warning(f"Final cleanup warning: {cleanup_error}")
 
 # Test Stub (principle: Test Everything)
 import unittest
