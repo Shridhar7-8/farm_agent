@@ -7,6 +7,7 @@ requires-python = ">=3.10"
 dependencies = [
     "aiohttp>=3.13.0",
     "google-adk>=1.13.0",
+    "lmnr[all]>=0.7.17",
     "loguru>=0.7.3",
     "python-dotenv>=1.1.1",
 ]
