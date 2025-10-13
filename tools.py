@@ -71,6 +71,9 @@ async def get_agricultural_knowledge_tool(agricultural_query: str, tool_context)
         # Initialize Vertex AI
         VertexAIFactory.init_vertexai(config)
         
+        # Note: Vertex AI may create internal HTTP sessions that we can't directly control
+        # The cleanup will be handled by our application-level cleanup functions
+        
         # Configure RAG retrieval
         rag_retrieval_config = rag.RagRetrievalConfig(
             top_k=5,
