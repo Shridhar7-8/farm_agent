@@ -7,14 +7,35 @@ from models import WeatherData, MarketPriceData, HourlyWeatherData
 from utils import logger
 
 class SharedAsyncClient:
-    """Singleton for aiohttp sessions (orthogonality, reuse)."""
+    """Singleton for aiohttp sessions with proper lifecycle management."""
     _session = None
 
     @classmethod
     async def get_session(cls):
         if cls._session is None or cls._session.closed:
-            cls._session = aiohttp.ClientSession(headers={'User-Agent': 'AI-Farm-Management-Assistant/1.0'})
+            cls._session = aiohttp.ClientSession(
+                headers={'User-Agent': 'AI-Farm-Management-Assistant/1.0'},
+                timeout=aiohttp.ClientTimeout(total=30)
+            )
         return cls._session
+    
+    @classmethod
+    async def close_session(cls):
+        """Close the shared session properly."""
+        if cls._session is not None and not cls._session.closed:
+            await cls._session.close()
+            cls._session = None
+            logger.info("Shared HTTP session closed successfully")
+    
+    @classmethod
+    async def __aenter__(cls):
+        """Async context manager entry."""
+        return await cls.get_session()
+    
+    @classmethod
+    async def __aexit__(cls, exc_type, exc_val, exc_tb):
+        """Async context manager exit with cleanup."""
+        await cls.close_session()
 
 class MarketPriceProcessor:
     """Market price processor using Agmarknet/data.gov.in for Indian mandi prices."""
@@ -404,3 +425,32 @@ class SheetDataProcessor:
 weather_processor = WeatherDataProcessor()  
 market_price_processor = MarketPriceProcessor()
 sheet_processor = SheetDataProcessor()
+
+async def cleanup_all_processors():
+    """Clean up all processor resources and HTTP sessions."""
+    try:
+        await SharedAsyncClient.close_session()
+        logger.info("All processor resources cleaned up successfully")
+    except Exception as e:
+        logger.error(f"Error during processor cleanup: {e}")
+
+# Module-level cleanup registration
+import atexit
+import asyncio
+
+def sync_cleanup():
+    """Synchronous cleanup function for atexit."""
+    try:
+        # Try to run async cleanup if possible
+        try:
+            loop = asyncio.get_event_loop()
+            if not loop.is_closed():
+                loop.run_until_complete(SharedAsyncClient.close_session())
+        except RuntimeError:
+            # Create new event loop if needed
+            asyncio.run(SharedAsyncClient.close_session())
+    except Exception as e:
+        print(f"Warning: Failed to cleanup sessions on exit: {e}")
+
+# Register cleanup function
+atexit.register(sync_cleanup)
