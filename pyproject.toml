@@ -1,12 +1,15 @@
 [project]
 name = "farm-agent"
 version = "0.1.0"
-description = "Add your description here"
+description = "AI-powered farm management assistant with Google ADK and Vertex AI Agent Engine support"
 readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [
     "aiohttp>=3.13.0",
-    "google-adk>=1.13.0",
+    "google-cloud-aiplatform[adk,agent_engines]>=1.111.0",
+    "google-adk>=1.0.0",
+    "vertexai>=1.0.0",
+    "pydantic>=2.0.0",
     "lmnr[all]>=0.7.17",
     "loguru>=0.7.3",
     "pytest>=8.4.2",
