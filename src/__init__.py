@@ -1,5 +1,5 @@
 """
-Farm Agent - AI-powered farm management system with refactored architecture
+Farm Agent - AI-powered farm management system
 """
 
 # Make src package importable by adding to path

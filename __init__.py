@@ -1,9 +1,6 @@
 """
 Farm Agent Package
 
-A modular, pythonic farm management agent system with simple classes and functions
-for beginner and intermediate level programmers.
-
 Key Components:
 - config: Configuration management
 - models: Data models and processors  

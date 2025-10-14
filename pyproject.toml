@@ -9,5 +9,6 @@ dependencies = [
     "google-adk>=1.13.0",
     "lmnr[all]>=0.7.17",
     "loguru>=0.7.3",
+    "pytest>=8.4.2",
     "python-dotenv>=1.1.1",
 ]
