@@ -188,15 +188,15 @@ async def run_agent_async_with_memory(runner: InMemoryRunner, user_query: str, u
             
             # Add to memory
             enhanced_session_manager.add_conversation_to_memory(
-                session_id, 
-                user_query, 
-                final_result, 
+                session_id,
+                user_query,
+                final_result,
                 extracted_context
             )
             
             # Show memory status
             memory_stats = memory_manager.get_conversation_count()
-            print(f"💭 Memory: {memory_stats['recent_conversations']} recent conversations" + 
+            print(f"💭 Memory: {memory_stats['recent_conversations']} recent conversations" +
                   (f" + summary" if memory_stats['has_summary'] else ""))
         
         # Display result if we got one
