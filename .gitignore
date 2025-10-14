@@ -92,7 +92,7 @@ tmp/
 htmlcov/
 
 # AI/ML specific
-models/
+model/
 *.pkl
 *.model
 *.h5

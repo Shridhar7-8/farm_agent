@@ -6,13 +6,13 @@ import sys
 from typing import Dict, Any
 from google.adk.runners import InMemoryRunner
 from google.genai import types
-from logging_setup import setup_logging
-from config import config
-from agents import farm_management_agent
-from memory import enhanced_session_manager
-from utils import logger, JsonUtils
-from processors import cleanup_all_processors
-from observability import initialize_laminar, observe_if_available, log_observability_status
+from src.observability.logging_setup import setup_logging
+from src.config.config import config
+from src.core.agents import farm_management_agent
+from src.core.memory import enhanced_session_manager
+from src.tools.utils import logger, JsonUtils
+from src.core.processors import cleanup_all_processors
+from src.observability.observability import initialize_laminar, observe_if_available, log_observability_status
 
 setup_logging(debug_mode=True)  # Toggle via env
 
@@ -249,7 +249,7 @@ async def main():
     print("🔍 DEBUG MODE: 🌾 GOOGLE ADK FARM MANAGEMENT SYSTEM WITH GUARDRAILS")
     print("=" * 70)
     print("🔍 DEBUG LOGGING ENABLED: You'll see detailed LLM interactions")
-    from observability import is_observability_enabled
+    from src.observability.observability import is_observability_enabled
     if is_observability_enabled():
         print("📊 OBSERVABILITY ENABLED: Laminar tracing active for performance monitoring")
     else:
