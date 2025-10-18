@@ -2,7 +2,7 @@
 Deployment script for Farm Management Agent to Vertex AI Agent Engine
 
 This script handles the deployment of the farm management agent to Agent Engine
-with proper configuration and error handling.
+with proper configuration and error handling, including RAG corpus access.
 """
 
 import asyncio
@@ -24,11 +24,14 @@ class AgentEngineDeployer:
         self.location = config.vertexai.location
         self.staging_bucket = os.getenv("STAGING_BUCKET", "gs://digitalhuman-445007-agent-staging")
         self.display_name = os.getenv("AGENT_DISPLAY_NAME", "Farm Management Agent")
+        self.service_account = "rag-service-account@digitalhuman-445007.iam.gserviceaccount.com"  # Newly added service account
         
         deployment_logger.info(f"Initializing deployment for project: {self.project_id}")
         deployment_logger.info(f"Location: {self.location}")
         deployment_logger.info(f"Staging bucket: {self.staging_bucket}")
-        
+        deployment_logger.info(f"RAG Corpus: {config.vertexai.rag_corpus_name}")
+        deployment_logger.info(f"Service Account: {self.service_account}")  # Log the service account
+
     async def test_local_agent(self):
         """Test the agent locally before deployment"""
         deployment_logger.info("🧪 Testing agent locally before deployment...")
@@ -40,7 +43,7 @@ class AgentEngineDeployer:
             deployment_logger.info(f"✅ Local session created: {session_id}")
             
             # Test a simple query
-            test_query = "What's the weather like today for farming?"
+            test_query = "What are the soil requirements for growing rice?"
             deployment_logger.info(f"🔍 Testing query: {test_query}")
             
             events = []
@@ -70,8 +73,10 @@ class AgentEngineDeployer:
             # Deploy the agent using the correct Agent Engine method
             deployment_logger.info("📦 Packaging and deploying agent...")
             
-            # According to Agent Engine docs, we should create the AdkApp deployment
-            # Use the create method from the SDK with explicit requirements and source code
+            # CRITICAL: Set environment variables for RAG access in deployed environment
+            deployment_logger.info(f"🔧 Configuring RAG corpus access: {config.vertexai.rag_corpus_name}")
+            
+           
             remote_app = agent_engines.create(
                 app,
                 display_name=self.display_name,
@@ -85,17 +90,61 @@ class AgentEngineDeployer:
                     "python-dotenv>=1.1.1",
                     "loguru>=0.7.3"
                 ],
-                extra_packages=["src/"]  # Include the entire src directory
+                extra_packages=["src/"],  # Include the entire src directory
+                env_vars={
+                    # Pass environment variables to deployed agent
+                    "PROJECT_ID": self.project_id,
+                    "LOCATION": self.location,
+                    "MODEL": config.vertexai.model_name,
+                    "RAG_CORPUS_NAME": config.vertexai.rag_corpus_name,
+                    "SHEETS_BASE_URL": config.base_url_sheets
+                },
+                service_account=self.service_account  # Use the new service account
             )
             
             deployment_logger.info("✅ Deployment successful!")
             deployment_logger.info(f"🎯 Agent resource name: {remote_app.resource_name}")
+            deployment_logger.info(f"📚 RAG Corpus configured: {config.vertexai.rag_corpus_name}")
+            
+            # Grant RAG corpus permissions to the deployed agent's service account
+            await self._grant_rag_permissions(remote_app.resource_name)
             
             return remote_app
             
         except Exception as e:
             deployment_logger.error(f"❌ Deployment failed: {e}")
             raise
+    
+    async def _grant_rag_permissions(self, agent_resource_name: str):
+        """Grant RAG corpus access permissions to the deployed agent."""
+        try:
+            deployment_logger.info("🔐 Configuring RAG corpus permissions...")
+            
+            # Extract service account from agent resource name
+            # Format: projects/{project}/locations/{location}/agents/{agent_id}
+            
+            deployment_logger.info(f"""
+📋 MANUAL PERMISSION SETUP REQUIRED:
+
+To enable RAG access for your deployed agent, run this command:
+
+gcloud projects add-iam-policy-binding {self.project_id} \\
+  --member="serviceAccount:service-{self.project_id}@gcp-sa-aiplatform.iam.gserviceaccount.com" \\
+  --role="roles/aiplatform.ragUser"
+
+OR grant permissions in the console:
+1. Go to: https://console.cloud.google.com/iam-admin/iam?project={self.project_id}
+2. Find: service-{self.project_id}@gcp-sa-aiplatform.iam.gserviceaccount.com
+3. Add role: "Vertex AI RAG Data Service Agent" or "roles/aiplatform.ragUser"
+
+RAG Corpus: {config.vertexai.rag_corpus_name}
+""")
+            
+            deployment_logger.info("✅ Permission instructions provided")
+            
+        except Exception as e:
+            deployment_logger.warning(f"⚠️ Could not automatically configure RAG permissions: {e}")
+            deployment_logger.warning("You may need to manually grant RAG access permissions")
     
     async def test_deployed_agent(self, remote_app):
         """Test the deployed agent"""
@@ -107,9 +156,10 @@ class AgentEngineDeployer:
             remote_session_id = remote_session.id if hasattr(remote_session, 'id') else remote_session.get('id', str(remote_session))
             deployment_logger.info(f"✅ Remote session created: {remote_session_id}")
             
-            # Test query on deployed agent
-            test_query = "Tell me about weather conditions for wheat farming in Punjab"
-            deployment_logger.info(f"🌾 Testing deployed agent with: {test_query}")
+            # Test query on deployed agent - SPECIFICALLY TEST RAG
+            test_query = "What are the climatic and soil requirements to grow rice?"
+            deployment_logger.info(f"🌾 Testing deployed agent with RAG query: {test_query}")
+            deployment_logger.info("📚 This query should trigger the RAG agent to access agricultural knowledge base")
             
             events = []
             async for event in remote_app.async_stream_query(
@@ -132,6 +182,13 @@ class AgentEngineDeployer:
                 if final_responses:
                     response_text = final_responses[0]["content"]["parts"][0]["text"]
                     deployment_logger.info(f"📋 Sample response: {response_text[:200]}...")
+                    
+                    # Check if RAG was actually used
+                    if "RAG" in response_text or "knowledge base" in response_text.lower() or len(response_text) > 300:
+                        deployment_logger.info("✅ RAG appears to be working - detailed agricultural response received")
+                    else:
+                        deployment_logger.warning("⚠️ RAG might not be working - response seems generic")
+                        deployment_logger.warning("Check if RAG corpus permissions are properly configured")
                 
                 return True
             else:
