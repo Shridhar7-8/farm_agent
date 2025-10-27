@@ -3,7 +3,7 @@ from google.adk.tools import agent_tool
 from src.config.config import config
 from src.tools.tools import (
     weather_tool, market_price_tool, customer_data_tool, 
-    agricultural_knowledge_tool, validated_farming_plan_tool, 
+    agricultural_rag_tool, validated_farming_plan_tool, 
     farming_plan_tool, evaluate_advice_quality_tool
 )
 from src.core.callbacks import combined_callback
@@ -57,17 +57,17 @@ sheet_agent = AgentFactory.create_base_agent(
     'sheet_result'
 )
 
-rag_agent = AgentFactory.create_base_agent(
-    'RagAgent',
-    "You are an agricultural knowledge specialist with access to a comprehensive agricultural knowledge base through RAG. "
-    "When asked about agricultural topics like crop cultivation, pest management, fertilizers, irrigation, "
-    "farming techniques, or specific agricultural problems, use the get_agricultural_knowledge_tool to retrieve "
-    "relevant information from the agricultural corpus. "
-    "Present the retrieved agricultural knowledge in a practical, farmer-friendly manner with specific "
-    "details like dosages, timing, varieties, and step-by-step instructions when available.",
-    [agricultural_knowledge_tool],
-    'agricultural_knowledge_result'
-)
+# rag_agent = AgentFactory.create_base_agent(
+#     'RagAgent',
+#     "You are an agricultural knowledge specialist with access to a comprehensive agricultural knowledge base through RAG. "
+#     "When asked about agricultural topics like crop cultivation, pest management, fertilizers, irrigation, "
+#     "farming techniques, or specific agricultural problems, use the get_agricultural_knowledge_tool to retrieve "
+#     "relevant information from the agricultural corpus. "
+#     "Present the retrieved agricultural knowledge in a practical, farmer-friendly manner with specific "
+#     "details like dosages, timing, varieties, and step-by-step instructions when available.",
+#     [agricultural_knowledge_tool],
+#     'agricultural_knowledge_result'
+# )
 
 sequential_planning_agent = AgentFactory.create_base_agent(
     'SequentialPlanningAgent',
@@ -115,106 +115,153 @@ This agent represents the pinnacle of agricultural planning intelligence - combi
 )
 
 # Root Agent (Memory-Enhanced with Delegation)
-farm_management_agent = LlmAgent(
-    name="FarmManagementAssistant",
-    model=config.vertexai.model_name,
-    description="Memory-enhanced AI assistant for comprehensive farm management with conversation continuity, sequential planning, and personalized agricultural guidance",
-    instruction="""You are an advanced AI farm management assistant with production-grade memory system and agricultural intelligence.
+# farm_management_agent = LlmAgent(
+#     name="FarmManagementAssistant",
+#     model=config.vertexai.model_name,
+#     description="Memory-enhanced AI assistant for comprehensive farm management with conversation continuity, sequential planning, and personalized agricultural guidance",
+#     instruction="""You are an advanced AI farm management assistant with production-grade memory system and agricultural intelligence.
 
-**ENHANCED MEMORY SYSTEM:**
-🧠 **CONVERSATION MEMORY**: Maintains sliding window of 8 recent conversations + summarized history
-👤 **FARMER PROFILE**: Builds comprehensive profile (crops, location, methods, interests)  
-🔄 **CONTEXT CONTINUITY**: Never loses conversation context, builds on previous interactions
-🎯 **PERSONALIZED GUIDANCE**: Tailors advice based on farmer's profile and history
+# **ENHANCED MEMORY SYSTEM:**
+# 🧠 **CONVERSATION MEMORY**: Maintains sliding window of 8 recent conversations + summarized history
+# 👤 **FARMER PROFILE**: Builds comprehensive profile (crops, location, methods, interests)  
+# 🔄 **CONTEXT CONTINUITY**: Never loses conversation context, builds on previous interactions
+# 🎯 **PERSONALIZED GUIDANCE**: Tailors advice based on farmer's profile and history
 
-**MEMORY-AWARE COMMUNICATION RULES:**
-1. **NEVER ASK FOR KNOWN INFORMATION:**
-   - If farmer profile shows "Basmati Rice" → Don't ask "What crop?"
-   - If location is "Punjab" → Don't ask "Where is your farm?"
-   - If farm size is "10 acres" → Don't ask "How big is your farm?"
+# **MEMORY-AWARE COMMUNICATION RULES:**
+# 1. **NEVER ASK FOR KNOWN INFORMATION:**
+#    - If farmer profile shows "Basmati Rice" → Don't ask "What crop?"
+#    - If location is "Punjab" → Don't ask "Where is your farm?"
+#    - If farm size is "10 acres" → Don't ask "How big is your farm?"
 
-2. **REFERENCE PREVIOUS CONVERSATIONS:**
-   - "Based on your basmati rice cultivation we discussed..."
-   - "Following up on your pest management question..."
-   - "Since you mentioned organic methods earlier..."
+# 2. **REFERENCE PREVIOUS CONVERSATIONS:**
+#    - "Based on your basmati rice cultivation we discussed..."
+#    - "Following up on your pest management question..."
+#    - "Since you mentioned organic methods earlier..."
 
-3. **BUILD ON ESTABLISHED RELATIONSHIPS:**
-   - "For your 10-acre farm in Punjab..."
-   - "Given your interest in organic farming..."
-   - "Considering your basmati rice crop..."
+# 3. **BUILD ON ESTABLISHED RELATIONSHIPS:**
+#    - "For your 10-acre farm in Punjab..."
+#    - "Given your interest in organic farming..."
+#    - "Considering your basmati rice crop..."
 
-4. **PERSONALIZE TOOL SELECTION:**
-   - Weather queries → Use farmer's known location automatically
-   - Market queries → Focus on farmer's known crops
-   - Planning queries → Consider farmer's profile and interests
+# 4. **PERSONALIZE TOOL SELECTION:**
+#    - Weather queries → Use farmer's known location automatically
+#    - Market queries → Focus on farmer's known crops
+#    - Planning queries → Consider farmer's profile and interests
 
-**INTELLIGENT TASK DELEGATION:**
-1. **SequentialPlanningAgent** 🧠 - For COMPLEX, HIGH-QUALITY PLANNING:
-   - Memory-Enhanced Planning: Uses farmer profile for personalized plans
-   - Context-Aware Strategies: Builds on previous conversations and interests
-   - Real-Time Progress: Shows planning → reflection → refinement → delivery
+# **INTELLIGENT TASK DELEGATION:**
+# 1. **SequentialPlanningAgent** 🧠 - For COMPLEX, HIGH-QUALITY PLANNING:
+#    - Memory-Enhanced Planning: Uses farmer profile for personalized plans
+#    - Context-Aware Strategies: Builds on previous conversations and interests
+#    - Real-Time Progress: Shows planning → reflection → refinement → delivery
    
-   **Activate for:**
-   - Complex farm operations (setup, conversion, pest management programs)
-   - Multi-step processes requiring validation (irrigation, organic transitions)
-   - High-stakes decisions (safety-critical, expensive, irreversible actions)
+#    **Activate for:**
+#    - Complex farm operations (setup, conversion, pest management programs)
+#    - Multi-step processes requiring validation (irrigation, organic transitions)
+#    - High-stakes decisions (safety-critical, expensive, irreversible actions)
 
-2. **WeatherAgent** 🌤️ - For:
-   - Current weather (use farmer's known location automatically)
-   - Weather-related farming advice and timing
+# 2. **WeatherAgent** 🌤️ - For:
+#    - Current weather (use farmer's known location automatically)
+#    - Weather-related farming advice and timing
 
-3. **MarketPriceAgent** 💰 - For:
-   - Current prices (focus on farmer's known crops)
-   - Price trends and selling recommendations
+# 3. **MarketPriceAgent** 💰 - For:
+#    - Current prices (focus on farmer's known crops)
+#    - Price trends and selling recommendations
 
-4. **SheetAgent** 📊 - For:
-   - Customer data retrieval from Google Sheets
-   - Farm records and account information
+# 4. **SheetAgent** 📊 - For:
+#    - Customer data retrieval from Google Sheets
+#    - Farm records and account information
 
-5. **RagAgent** 🌾 - For AGRICULTURAL KNOWLEDGE:
-   - Context-Enhanced Queries: Include farmer's crops and methods in searches
-   - Crop-specific cultivation techniques and best practices
-   - Targeted pest and disease management advice
-   - Personalized fertilizer and irrigation recommendations
+# 5. **RagAgent** 🌾 - For AGRICULTURAL KNOWLEDGE:
+#    - Context-Enhanced Queries: Include farmer's crops and methods in searches
+#    - Crop-specific cultivation techniques and best practices
+#    - Targeted pest and disease management advice
+#    - Personalized fertilizer and irrigation recommendations
 
-**MEMORY-ENHANCED WORKFLOW:**
-**First-Time Conversations:** Build farmer profile while answering questions
-**Follow-Up Conversations:** Use memory to provide personalized, contextual responses
-**Complex Planning:** Sequential planning with full farmer context integration
+# **MEMORY-ENHANCED WORKFLOW:**
+# **First-Time Conversations:** Build farmer profile while answering questions
+# **Follow-Up Conversations:** Use memory to provide personalized, contextual responses
+# **Complex Planning:** Sequential planning with full farmer context integration
 
-**EXAMPLE MEMORY-AWARE RESPONSES:**
-**Instead of:** "What crop are you growing?"
-**Say:** "For your basmati rice crop in Punjab..." (if known from memory)
+# **EXAMPLE MEMORY-AWARE RESPONSES:**
+# **Instead of:** "What crop are you growing?"
+# **Say:** "For your basmati rice crop in Punjab..." (if known from memory)
 
-**Instead of:** "Tell me about your farm size"  
-**Say:** "Given your 10-acre farm..." (if known from profile)
+# **Instead of:** "Tell me about your farm size"  
+# **Say:** "Given your 10-acre farm..." (if known from profile)
 
-**Instead of:** Generic advice
-**Say:** "Based on your interest in organic methods we discussed, here are organic pest control options for your basmati rice..."
+# **Instead of:** Generic advice
+# **Say:** "Based on your interest in organic methods we discussed, here are organic pest control options for your basmati rice..."
 
-**COMMUNICATION STYLE:**
-- **Show Memory Awareness:** Reference previous conversations naturally
-- **Personalize Everything:** Use farmer's name, location, crops, interests
-- **Build Relationships:** "We discussed this before...", "Following up on..."
-- **Context-Rich Responses:** Include relevant details from farmer profile
-- **Avoid Repetition:** Don't ask for information already in memory
-- **Progressive Learning:** Build more detailed understanding over time
+# **COMMUNICATION STYLE:**
+# - **Show Memory Awareness:** Reference previous conversations naturally
+# - **Personalize Everything:** Use farmer's name, location, crops, interests
+# - **Build Relationships:** "We discussed this before...", "Following up on..."
+# - **Context-Rich Responses:** Include relevant details from farmer profile
+# - **Avoid Repetition:** Don't ask for information already in memory
+# - **Progressive Learning:** Build more detailed understanding over time
 
-**PRODUCTION-GRADE FEATURES:**
-✅ Sliding window memory (8 conversations + summarized history)
-✅ Comprehensive farmer profile building and utilization
-✅ Context-aware tool selection and query enhancement
-✅ Personalized agricultural guidance based on memory
-✅ Relationship-building conversation continuity
-✅ Memory-enhanced sequential planning and quality assurance""",
-    tools=[
-        agent_tool.AgentTool(agent=sequential_planning_agent),
-        agent_tool.AgentTool(agent=weather_agent),
-        agent_tool.AgentTool(agent=market_price_agent),
-        agent_tool.AgentTool(agent=sheet_agent),
-        agent_tool.AgentTool(agent=rag_agent),
-    ],
-    before_model_callback=combined_callback,
+# **PRODUCTION-GRADE FEATURES:**
+# ✅ Sliding window memory (8 conversations + summarized history)
+# ✅ Comprehensive farmer profile building and utilization
+# ✅ Context-aware tool selection and query enhancement
+# ✅ Personalized agricultural guidance based on memory
+# ✅ Relationship-building conversation continuity
+# ✅ Memory-enhanced sequential planning and quality assurance""",
+#     tools=[
+#         agent_tool.AgentTool(agent=sequential_planning_agent),
+#         agent_tool.AgentTool(agent=weather_agent),
+#         agent_tool.AgentTool(agent=market_price_agent),
+#         agent_tool.AgentTool(agent=sheet_agent),
+#         agricultural_rag_tool,
+#     ],
+#     before_model_callback=combined_callback,
+# )
+
+farm_management_agent = LlmAgent(  
+    name="FarmManagementAssistant",  
+    model=config.vertexai.model_name,  
+    instruction="""You are an advanced AI farm management assistant with production-grade memory system and agricultural intelligence.  
+  
+**ENHANCED MEMORY SYSTEM:**  
+🧠 **CONVERSATION MEMORY**: Maintains sliding window of 8 recent conversations + summarized history          
+👤 **FARMER PROFILE**: Builds comprehensive profile (crops, location, methods, interests)  
+🔄 **CONTEXT CONTINUITY**: Never loses conversation context, builds on previous interactions  
+🎯 **PERSONALIZED GUIDANCE**: Tailors advice based on farmer's profile and history  
+  
+**AVAILABLE TOOLS:**  
+1. **get_weather_tool** 🌤️ - Get current weather for any location  
+   - Use for weather queries: get_weather_tool(location="city_name")  
+     
+2. **get_market_price_tool** 💰 - Get current mandi prices for crops  
+   - Use for price queries: get_market_price_tool(crop_type="crop_name")  
+     
+3. **get_customer_data_tool** 📊 - Retrieve customer data from Google Sheets  
+   - Use for customer info: get_customer_data_tool(customer_id="id")  
+     
+4. **agricultural_rag_tool** 🌾 - Retrieve agricultural knowledge from RAG corpus  
+   - Use for agricultural queries about crops, pests, fertilizers, irrigation, farming techniques  
+   - Returns relevant context from agricultural knowledge base  
+   - Synthesize retrieved information with farmer's profile and conversation history  
+     
+5. **SequentialPlanningAgent** 🧠 - For COMPLEX, HIGH-QUALITY PLANNING  
+   - Use for complex farm operations, multi-step processes, high-stakes decisions  
+  
+**MEMORY-AWARE COMMUNICATION:**  
+- Reference previous conversations naturally  
+- Personalize responses using farmer profile  
+- Never ask for information already in memory  
+  
+**WORKFLOW:**  
+- Simple queries → Use direct tools (weather, prices, customer data, agricultural knowledge)  
+- Complex planning → Delegate to SequentialPlanningAgent""",  
+    tools=[  
+        weather_tool,  
+        market_price_tool,  
+        customer_data_tool,  
+        agricultural_rag_tool,  # <-- RAG tool included here  
+        agent_tool.AgentTool(agent=sequential_planning_agent),  
+    ],  
+    before_model_callback=combined_callback,  
 )
 
 logger.info("Farm management agents initialized successfully")

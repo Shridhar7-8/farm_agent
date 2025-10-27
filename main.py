@@ -13,7 +13,6 @@ from src.core.memory import enhanced_session_manager
 from src.tools.utils import logger, JsonUtils
 from src.core.processors import cleanup_all_processors
 from src.observability.observability import initialize_laminar, observe_if_available, log_observability_status
-
 setup_logging(debug_mode=True)  # Toggle via env
 
 # Initialize Laminar observability (non-blocking)
