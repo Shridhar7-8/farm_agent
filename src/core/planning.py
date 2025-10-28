@@ -1,5 +1,6 @@
 from typing import Dict, Any, Optional
 import logging
+import asyncio
 from src.config.config import config
 from src.tools.utils import VertexAIFactory, JsonUtils, logger
 from src.observability.observability import observe_if_available
@@ -132,6 +133,83 @@ REFINEMENT_SYSTEM_INSTRUCTION = """You are an Agricultural Plan Refinement Speci
 
 
 # ============================================================================
+# MODEL CACHES
+# ============================================================================
+
+_planning_model_lock = asyncio.Lock()
+_planning_model_cache = None
+
+_reflection_model_lock = asyncio.Lock()
+_reflection_model_cache = None
+
+_refinement_model_lock = asyncio.Lock()
+_refinement_model_cache = None
+
+
+async def _get_planning_model():
+    global _planning_model_cache
+    if _planning_model_cache is not None:
+        return _planning_model_cache
+
+    async with _planning_model_lock:
+        if _planning_model_cache is not None:
+            return _planning_model_cache
+
+        VertexAIFactory.init_vertexai(config)
+        _planning_model_cache = VertexAIFactory.create_model(
+            model_name=config.vertexai.model_name,
+            system_instruction=PLANNING_SYSTEM_INSTRUCTION
+        )
+        logger.info("Planning model cache initialized")
+        return _planning_model_cache
+
+
+async def _get_reflection_model():
+    global _reflection_model_cache
+    if _reflection_model_cache is not None:
+        return _reflection_model_cache
+
+    async with _reflection_model_lock:
+        if _reflection_model_cache is not None:
+            return _reflection_model_cache
+
+        VertexAIFactory.init_vertexai(config)
+        _reflection_model_cache = VertexAIFactory.create_model(
+            model_name=config.vertexai.model_name,
+            system_instruction=REFLECTION_SYSTEM_INSTRUCTION
+        )
+        logger.info("Reflection model cache initialized")
+        return _reflection_model_cache
+
+
+async def _get_refinement_model():
+    global _refinement_model_cache
+    if _refinement_model_cache is not None:
+        return _refinement_model_cache
+
+    async with _refinement_model_lock:
+        if _refinement_model_cache is not None:
+            return _refinement_model_cache
+
+        VertexAIFactory.init_vertexai(config)
+        _refinement_model_cache = VertexAIFactory.create_model(
+            model_name=config.vertexai.model_name,
+            system_instruction=REFINEMENT_SYSTEM_INSTRUCTION
+        )
+        logger.info("Refinement model cache initialized")
+        return _refinement_model_cache
+
+
+async def warmup_planning_models():
+    """Ensure all planning-related models are initialized for low-latency access."""
+    await asyncio.gather(
+        _get_planning_model(),
+        _get_reflection_model(),
+        _get_refinement_model(),
+    )
+
+
+# ============================================================================
 # FARMING PLANNING AGENT
 # ============================================================================
 
@@ -158,12 +236,7 @@ class FarmingPlanningAgent:
             Detailed plan with steps, priorities, and timeline
         """
         try:
-            VertexAIFactory.init_vertexai(config)
-            
-            planning_model = VertexAIFactory.create_model(
-                model_name=config.vertexai.model_name,
-                system_instruction=PLANNING_SYSTEM_INSTRUCTION
-            )
+            planning_model = await _get_planning_model()
 
             context_info = ""
             if context:
@@ -262,12 +335,7 @@ class ReflectionAgent:
             Quality evaluation with score, feedback, and improvement suggestions
         """
         try:
-            VertexAIFactory.init_vertexai(config)
-                
-            reflection_model = VertexAIFactory.create_model(
-                model_name=config.vertexai.model_name,
-                system_instruction=REFLECTION_SYSTEM_INSTRUCTION
-            )
+            reflection_model = await _get_reflection_model()
 
             context_info = ""
             if context:
@@ -371,8 +439,6 @@ class SequentialPlanningAgent:
             self.logger.info(f"Starting sequential planning for: {problem_description[:100]}...")
             self.logger.debug(f"Planning context: {context}")
             self._print_progress("SEQUENTIAL PLANNING SYSTEM", "Initializing production-grade planning workflow...")
-            
-            VertexAIFactory.init_vertexai(config)
             
             # ========================================================================
             # PHASE 1: PLANNING GENERATION
@@ -485,10 +551,7 @@ class SequentialPlanningAgent:
 
     async def _generate_agricultural_plan(self, problem_description: str, context: Optional[Dict] = None) -> Dict[str, Any]:
         """Generate initial agricultural plan (Phase 1)."""
-        planning_model = VertexAIFactory.create_model(
-            model_name=config.vertexai.model_name,
-            system_instruction=PLANNING_SYSTEM_INSTRUCTION
-        )
+        planning_model = await _get_planning_model()
 
         context_info = ""
         if context:
@@ -544,10 +607,7 @@ Respond with a detailed JSON plan following the exact structure specified in you
 
     async def _evaluate_plan_quality(self, plan_text: str, context: Optional[Dict] = None, original_query: str = "") -> Dict[str, Any]:
         """Evaluate plan quality and safety (Phase 2)."""
-        reflection_model = VertexAIFactory.create_model(
-            model_name=config.vertexai.model_name,
-            system_instruction=REFLECTION_SYSTEM_INSTRUCTION
-        )
+        reflection_model = await _get_reflection_model()
 
         context_info = ""
         if context:
@@ -604,10 +664,7 @@ Respond with a detailed JSON evaluation following the exact structure specified.
 
     async def _refine_plan(self, current_plan: Dict[str, Any], evaluation: Dict[str, Any], problem_description: str, context: Optional[Dict] = None) -> Dict[str, Any]:
         """Refine plan based on evaluation feedback (Phase 3)."""
-        refinement_model = VertexAIFactory.create_model(
-            model_name=config.vertexai.model_name,
-            system_instruction=REFINEMENT_SYSTEM_INSTRUCTION
-        )
+        refinement_model = await _get_refinement_model()
 
         improvement_suggestions = evaluation.get("improvement_suggestions", [])
         concerns = evaluation.get("concerns", [])

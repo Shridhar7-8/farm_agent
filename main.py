@@ -3,6 +3,7 @@ import uuid
 import logging
 import signal
 import sys
+import re
 from typing import Dict, Any
 from google.adk.runners import InMemoryRunner
 from google.genai import types
@@ -12,7 +13,9 @@ from src.core.agents import farm_management_agent
 from src.core.memory import enhanced_session_manager
 from src.tools.utils import logger, JsonUtils
 from src.core.processors import cleanup_all_processors
-from src.observability.observability import initialize_laminar, observe_if_available, log_observability_status
+from src.observability.observability import initialize_laminar, observe_if_available, log_observability_status, is_observability_enabled
+from src.core.warmup import warmup_all
+
 setup_logging(debug_mode=True)  # Toggle via env
 
 # Initialize Laminar observability (non-blocking)
@@ -59,7 +62,7 @@ async def cleanup_application():
 
 def signal_handler(signum, frame):
     """Handle shutdown signals gracefully."""
-    print("\n\n🛑 Shutdown signal received. Cleaning up...")
+    print("\n\nShutdown signal received. Cleaning up...")
     logger.info(f"Received signal {signum}, initiating graceful shutdown")
     
     # Force cleanup and exit immediately
@@ -70,12 +73,12 @@ def signal_handler(signum, frame):
             asyncio.run(cleanup_application())
         else:
             # If we're in an async context, we need to handle it differently
-            print("🔄 Forcing immediate cleanup...")
+            print("Forcing immediate cleanup...")
             logger.warning("Forcing immediate cleanup due to signal")
     except Exception as e:
         logger.error(f"Signal handler cleanup failed: {e}")
     finally:
-        print("👋 Cleanup completed. Goodbye!")
+        print("Cleanup completed. Goodbye!")
         sys.exit(0)
 
 @observe_if_available(name="extract_conversation_context")
@@ -102,6 +105,30 @@ def extract_context_from_conversation(query: str, response: str) -> Dict[str, An
             break
     
     return extracted
+
+def _format_for_speech(response_text: str) -> str:
+    if not response_text:
+        return response_text
+
+    lines = [line.strip() for line in response_text.splitlines() if line.strip()]
+
+    if len(lines) == 1:
+        return lines[0]
+
+    summary_line = re.sub(r"^[\-*•\d.\s]+", "", lines[0])
+    details = []
+    for line in lines[1:]:
+        cleaned = re.sub(r"^[\-*•\d.\s]+", "", line)
+        if cleaned:
+            cleaned = cleaned.replace("**", "")
+            details.append(cleaned)
+
+    if not details:
+        return summary_line
+
+    detail_sentence = "; ".join(details)
+    return f"{summary_line}. {detail_sentence}"
+
 
 @observe_if_available(name="farm_agent_execution")
 async def run_agent_async_with_memory(runner: InMemoryRunner, user_query: str, user_id: str = "farmer_123") -> str:
@@ -200,7 +227,8 @@ async def run_agent_async_with_memory(runner: InMemoryRunner, user_query: str, u
         
         # Display result if we got one
         if final_result:
-            print(f"\n✅ Response:\n{final_result}")
+            spoken_text = _format_for_speech(final_result)
+            print("\n✅ Spoken Response:\n" + spoken_text)
         else:
             print(f"\n⚠️  No response content received")
             
@@ -242,27 +270,28 @@ async def main():
     root_logger.debug("🔍 DEBUG MODE ACTIVE: Full LLM interaction logging enabled")
     
     # Log observability status
-    log_observability_status()
-    
-    print("=" * 70)
-    print("🔍 DEBUG MODE: 🌾 GOOGLE ADK FARM MANAGEMENT SYSTEM WITH GUARDRAILS")
-    print("=" * 70)
-    print("🔍 DEBUG LOGGING ENABLED: You'll see detailed LLM interactions")
-    from src.observability.observability import is_observability_enabled
     if is_observability_enabled():
-        print("📊 OBSERVABILITY ENABLED: Laminar tracing active for performance monitoring")
+        log_observability_status()
+    
+    divider = "=" * 70
+    print(divider)
+    print("[DEBUG MODE] GOOGLE ADK FARM MANAGEMENT SYSTEM WITH GUARDRAILS")
+    print(divider)
+    print("[DEBUG MODE] Detailed LLM interactions are logged")
+    if is_observability_enabled():
+        print("[OBSERVABILITY] Laminar tracing active for performance monitoring")
     else:
-        print("📊 OBSERVABILITY DISABLED: Set LMNR_PROJECT_API_KEY to enable tracing")
-    print("=" * 70)
-    print("\nThis system includes:")
-    print("  ✓ Input validation and safety guardrails")
-    print("  ✓ Domain-specific enforcement (agriculture only)")
-    print("  ✓ Protection against jailbreaking attempts")
-    print("  ✓ Privacy and security checks")
+        print("[OBSERVABILITY] Disabled. Set LMNR_PROJECT_API_KEY to enable tracing")
+    print(divider)
+    print("\nSystem capabilities:")
+    print("  - Input validation and safety guardrails")
+    print("  - Domain-specific enforcement (agriculture only)")
+    print("  - Protection against jailbreaking attempts")
+    print("  - Privacy and security checks")
     if is_observability_enabled():
-        print("  ✓ Performance monitoring and LLM call tracing")
-    print("=" * 70)
-    
+        print("  - Performance monitoring and LLM call tracing")
+    print(divider)
+
     runner = InMemoryRunner(farm_management_agent, app_name="farm_management_app")
     
     # Example farmer info (for demo; in production, load from session)
@@ -273,78 +302,74 @@ async def main():
         "farm_size": "10 acres"
     }
     
-    print("\n🌾 Welcome, Rajesh Kumar!")
-    print(f"📍 Location: {farmer_info['location']}")
-    print(f"🌱 Crops: {', '.join(farmer_info['crops'])}")
-    print(f"📏 Farm Size: {farmer_info['farm_size']}")
-    print("\n" + "=" * 70)
-    print("🧠 **ENHANCED WITH PRODUCTION-GRADE SEQUENTIAL INTELLIGENCE:**")
-    print("  🎯 SEQUENTIAL PLANNING: Integrated planning + reflection in one atomic operation")
-    print("  🔍 REAL-TIME PROGRESS: Watch planning → reflection → refinement → delivery")
-    print("  📊 QUALITY ASSURANCE: Built-in safety validation and iterative improvement")
-    print("  🛡️ GUARDRAILS: Domain enforcement and comprehensive safety protection")
-    print("\n💬 **WHAT YOU CAN ASK:**")
-    print("  🧠 **Sequential Planning Queries (WITH LIVE PROGRESS):**")
-    print("    • 'Create a complete plan to manage pest outbreak in my cotton field'") 
-    print("    • 'How do I convert 5 acres from rice to organic vegetable farming?'")
-    print("    • 'Step-by-step process for setting up drip irrigation system'")
-    print("    • 'Complete strategy for transitioning to organic farming'")
-    print("\n  📊 **Simple Information Queries:**")
-    print("    • Weather conditions and forecasts")
-    print("    • Current market prices for crops")
-    print("    • Customer data and account information") 
-    print("    • Agricultural knowledge and farming techniques")
-    print("    • Crop cultivation and pest management advice")
-    print("\n🎯 **SEQUENTIAL PLANNING PROCESS (You'll See Live):**")
-    print("    🎯 Phase 1 - Planning: Analyzing and creating comprehensive plan")
-    print("    🔍 Phase 2 - Reflection: Evaluating quality, safety, and practicality")
-    print("    🔧 Phase 3 - Refinement: Improving plan based on feedback (if needed)")
-    print("    🎉 Phase 4 - Delivery: Final validated, production-ready plan")
+    print("\nWelcome, Rajesh Kumar!")
+    print(f"  Location: {farmer_info['location']}")
+    print(f"  Crops: {', '.join(farmer_info['crops'])}")
+    print(f"  Farm Size: {farmer_info['farm_size']}")
+    print("\n" + divider)
+    print("Capabilities overview:")
+    print("  - Sequential planning with integrated reflection")
+    print("  - Real-time progress visibility")
+    print("  - Quality assurance and iterative improvement")
+    print("  - Guardrails with domain enforcement")
+    print("\nExample queries:")
+    print("  - Create a plan to manage pest outbreak in cotton")
+    print("  - Convert 5 acres from rice to organic vegetables")
+    print("  - Step-by-step drip irrigation setup")
+    print("  - Weather forecast for your farm location")
+    print("  - Current market prices for your crops")
+    print("  - Retrieve customer data from records")
+    print("\nSequential planning phases:")
+    print("  1. Planning")
+    print("  2. Reflection")
+    print("  3. Refinement")
+    print("  4. Delivery")
     print("\nType 'exit' or 'quit' to end the session.")
-    print("=" * 70)
+    print(divider)
     
     # Interactive query loop
     while True:
         try:
-            print("\n" + "─" * 70)
-            user_query = input("🎤 Your Question: ").strip()
+            print("\n" + "-" * 70)
+            user_query = input("Your Question: ").strip()
             
             if not user_query:
                 continue
                 
             if user_query.lower() in ['exit', 'quit', 'bye', 'goodbye']:
-                print("\n� Cleaning up system resources...")
+                print("\nCleaning up system resources...")
                 await cleanup_application()
-                print("�👋 Thank you for using the Farm Management System!")
-                print("🌾 Happy Farming!\n")
+                print("Thank you for using the Farm Management System!")
+                print("Happy Farming!\n")
                 break
             
             # Process the query with memory-enhanced system
             result = await run_agent_async_with_memory(runner, user_query, user_id="farmer_123")
             
         except KeyboardInterrupt:
-            print("\n\n� Session interrupted. Cleaning up...")
+            print("\n\nSession interrupted. Cleaning up...")
             await cleanup_application()
-            print("👋 Goodbye!")
+            print("Goodbye!")
             break
         except Exception as e:
-            print(f"\n❌ Error: {e}")
+            print(f"\nError: {e}")
             continue
 
 if __name__ == "__main__":
     try:
+        asyncio.run(warmup_all())
         asyncio.run(main())
     except Exception as e:
-        print(f"\n❌ Application error: {e}")
+        print(f"\nApplication error: {e}")
         logger.error(f"Application error: {e}", exc_info=True)
     finally:
         # Force cleanup on exit
         try:
-            print("\n🔄 Performing final system cleanup...")
+            print("\nPerforming final system cleanup...")
             asyncio.run(cleanup_application())
-            print("✅ Cleanup completed.")
+            print("Cleanup completed.")
         except Exception as cleanup_error:
-            print(f"⚠️ Cleanup warning: {cleanup_error}")
+            print(f"Cleanup warning: {cleanup_error}")
             logger.warning(f"Final cleanup warning: {cleanup_error}")
 
 # Test Stub (principle: Test Everything)

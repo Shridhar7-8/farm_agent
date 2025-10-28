@@ -1,12 +1,16 @@
 import asyncio
-from typing import Dict, Any
+from typing import Dict, Any, Optional
 from google.adk.tools import FunctionTool
-from src.core.processors import weather_processor, market_price_processor, sheet_processor
+from src.core.processors import (
+    weather_processor,
+    market_price_processor,
+    sheet_processor,
+    SharedAsyncClient,
+)
 from src.core.planning import sequential_planner, reflection_agent, farming_planner  # Import from planning.py
 from src.tools.utils import JsonUtils, VertexAIFactory, logger
 from src.config.config import config
-from google.adk.tools.retrieval import VertexAiRagRetrieval  
-from vertexai.preview import rag  
+from vertexai import rag
 from vertexai.generative_models import GenerativeModel, Tool
 import vertexai
 import logging
@@ -14,6 +18,71 @@ from src.observability.observability import observe_if_available
 
 
 rag_logger = logging.getLogger('farm_agent.tools.rag')
+
+
+_rag_model_lock = asyncio.Lock()
+_rag_model_cache: Optional[GenerativeModel] = None
+_rag_retrieval_tool_cache: Optional[Tool] = None
+
+
+async def _ensure_rag_model() -> GenerativeModel:
+    global _rag_model_cache, _rag_retrieval_tool_cache
+    if _rag_model_cache is not None:
+        return _rag_model_cache
+
+    async with _rag_model_lock:
+        if _rag_model_cache is not None:
+            return _rag_model_cache
+
+        VertexAIFactory.init_vertexai(config)
+
+        rag_retrieval_config = rag.RagRetrievalConfig(
+            top_k=5,
+            filter=rag.Filter(vector_distance_threshold=0.4),
+        )
+
+        _rag_retrieval_tool_cache = Tool.from_retrieval(
+            retrieval=rag.Retrieval(
+                source=rag.VertexRagStore(
+                    rag_resources=[
+                        rag.RagResource(
+                            rag_corpus=config.vertexai.rag_corpus_name,
+                        )
+                    ],
+                    rag_retrieval_config=rag_retrieval_config,
+                ),
+            )
+        )
+
+        _rag_model_cache = VertexAIFactory.create_model(
+            model_name="gemini-2.0-flash-001",
+            tools=[_rag_retrieval_tool_cache],
+            system_instruction="""You are an expert agricultural advisor with access to comprehensive agricultural knowledge.
+
+**Your Role:**
+- Provide detailed, practical farming advice based on retrieved agricultural knowledge
+- Help farmers with crop cultivation, pest management, fertilization, and irrigation
+- Give specific recommendations including varieties, doses, timing, and methods
+
+**Response Guidelines:**
+- Be specific and practical for farmers
+- Include exact quantities (kg/ha, quintals, days after sowing) when available
+- Mention specific crop varieties and chemical names when available
+- Provide step-by-step guidance when needed
+- Use clear, farmer-friendly language
+- Focus on Indian agricultural conditions and practices"""
+        )
+
+        rag_logger.info("Initialized RAG model and retrieval tool cache")
+        return _rag_model_cache
+
+
+async def warmup_rag_model():
+    try:
+        await _ensure_rag_model()
+        rag_logger.info("RAG model warmup complete")
+    except Exception as exc:
+        rag_logger.warning(f"RAG warmup failed: {exc}")
 
 
 
@@ -70,103 +139,52 @@ async def get_customer_data_tool(customer_id: str, tool_context) -> Dict[str, An
         "customer_data": customer_data
     }
 
-# @observe_if_available(name="agricultural_rag_tool")
-# async def get_agricultural_knowledge_tool(agricultural_query: str, tool_context) -> Dict[str, Any]:
-#     """Get agricultural knowledge using RAG from the agricultural corpus."""
-#     try:
-#         # Initialize Vertex AI
-#         VertexAIFactory.init_vertexai(config)
+@observe_if_available(name="agricultural_rag_tool")
+async def get_agricultural_knowledge_tool(agricultural_query: str, tool_context) -> Dict[str, Any]:
+    """Get agricultural knowledge using RAG from the agricultural corpus."""
+    try:
+        # Initialize Vertex AI once and reuse cached model/tool
+        rag_model = await _ensure_rag_model()
         
-#         # Note: Vertex AI may create internal HTTP sessions that we can't directly control
-#         # The cleanup will be handled by our application-level cleanup functions
+        # Generate RAG-enhanced response
+        rag_logger.debug("-----------------------------------------------------------")
+        rag_logger.debug("LLM Request to RAG model:")
+        rag_logger.debug(f"Model: gemini-2.0-flash-001")
+        rag_logger.debug(f"System Instruction: You are an expert agricultural advisor...")
+        rag_logger.debug(f"Query: {agricultural_query}")
+        rag_logger.debug("Tools: RAG retrieval tool enabled")
+        rag_logger.debug("-----------------------------------------------------------")
         
-#         # Configure RAG retrieval
-#         rag_retrieval_config = rag.RagRetrievalConfig(
-#             top_k=5,
-#             filter=rag.Filter(vector_distance_threshold=0.4),
-#         )
+        response = rag_model.generate_content(agricultural_query)
         
-#         # Create RAG retrieval tool
-#         rag_retrieval_tool = Tool.from_retrieval(
-#             retrieval=rag.Retrieval(
-#                 source=rag.VertexRagStore(
-#                     rag_resources=[
-#                         rag.RagResource(
-#                             rag_corpus=config.vertexai.rag_corpus_name,
-#                         )
-#                     ],
-#                     rag_retrieval_config=rag_retrieval_config,
-#                 ),
-#             )
-#         )
+        rag_logger.debug("-----------------------------------------------------------")
+        rag_logger.debug("LLM Response from RAG model:")
+        if response and response.text:
+            rag_logger.debug(f"Response text: {response.text[:500]}...")
+        else:
+            rag_logger.warning("No response received from RAG model")
+        rag_logger.debug("-----------------------------------------------------------")
         
-#         # Create RAG-enhanced model
-#         rag_model = VertexAIFactory.create_model(
-#             model_name="gemini-2.0-flash-001",
-#             tools=[rag_retrieval_tool],
-#             system_instruction="""You are an expert agricultural advisor with access to comprehensive agricultural knowledge.
-
-# **Your Role:**
-# - Provide detailed, practical farming advice based on retrieved agricultural knowledge
-# - Help farmers with crop cultivation, pest management, fertilization, and irrigation
-# - Give specific recommendations including varieties, doses, timing, and methods
-
-# **Response Guidelines:**
-# - Be specific and practical for farmers
-# - Include exact quantities (kg/ha, quintals, days after sowing) when available
-# - Mention specific crop varieties and chemical names when available
-# - Provide step-by-step guidance when needed
-# - Use clear, farmer-friendly language
-# - Focus on Indian agricultural conditions and practices"""
-#         )
-        
-#         # Generate RAG-enhanced response
-#         rag_logger.debug("-----------------------------------------------------------")
-#         rag_logger.debug("LLM Request to RAG model:")
-#         rag_logger.debug(f"Model: gemini-2.0-flash-001")
-#         rag_logger.debug(f"System Instruction: You are an expert agricultural advisor...")
-#         rag_logger.debug(f"Query: {agricultural_query}")
-#         rag_logger.debug("Tools: RAG retrieval tool enabled")
-#         rag_logger.debug("-----------------------------------------------------------")
-        
-#         response = rag_model.generate_content(agricultural_query)
-        
-#         rag_logger.debug("-----------------------------------------------------------")
-#         rag_logger.debug("LLM Response from RAG model:")
-#         if response and response.text:
-#             rag_logger.debug(f"Response text: {response.text[:500]}...")
-#         else:
-#             rag_logger.warning("No response received from RAG model")
-#         rag_logger.debug("-----------------------------------------------------------")
-        
-#         if response and response.text:
-#             logger.info(f"RAG tool successfully processed query about: {agricultural_query[:50]}...")
-#             return {
-#                 "status": "success",
-#                 "query": agricultural_query,
-#                 "agricultural_advice": response.text,
-#                 "source": "RAG Agricultural Knowledge Base"
-#             }
-#         else:
-#             return {
-#                 "status": "error", 
-#                 "message": "Could not generate response from agricultural knowledge base"
-#             }
+        if response and response.text:
+            logger.info(f"RAG tool successfully processed query about: {agricultural_query[:50]}...")
+            return {
+                "status": "success",
+                "query": agricultural_query,
+                "agricultural_advice": response.text,
+                "source": "RAG Agricultural Knowledge Base"
+            }
+        else:
+            return {
+                "status": "error", 
+                "message": "Could not generate response from agricultural knowledge base"
+            }
             
-#     except Exception as e:
-#         logger.error(f"Error in RAG agricultural knowledge tool: {e}")
-#         return {
-#             "status": "error",
-#             "message": f"Error accessing agricultural knowledge: {str(e)}"
-#         }
-
-agricultural_rag_tool = VertexAiRagRetrieval(  
-    name="get_agricultural_knowledge",  
-    description="Retrieve agricultural knowledge about crops, pests, fertilizers, irrigation, and farming techniques from the agricultural corpus",  
-    rag_resources=[rag.RagResource(rag_corpus=config.vertexai.rag_corpus_name)],  
-    similarity_top_k=5,  
-    vector_distance_threshold=0.4  
-)
+    except Exception as e:
+        logger.error(f"Error in RAG agricultural knowledge tool: {e}")
+        return {
+            "status": "error",
+            "message": f"Error accessing agricultural knowledge: {str(e)}"
+        }
 
 @observe_if_available(name="validated_farming_plan_tool")
 async def get_validated_farming_plan_tool(problem_description: str, tool_context) -> Dict[str, Any]:
@@ -264,7 +282,7 @@ async def evaluate_advice_quality_tool(advice_text: str, tool_context) -> Dict[s
 weather_tool = FunctionTool(get_weather_tool)
 market_price_tool = FunctionTool(get_market_price_tool)
 customer_data_tool = FunctionTool(get_customer_data_tool)
-# agricultural_knowledge_tool = FunctionTool(get_agricultural_knowledge_tool)
+agricultural_knowledge_tool = FunctionTool(get_agricultural_knowledge_tool)
 validated_farming_plan_tool = FunctionTool(get_validated_farming_plan_tool)
 farming_plan_tool = FunctionTool(get_farming_plan_tool)
 evaluate_advice_quality_tool = FunctionTool(evaluate_advice_quality_tool)
