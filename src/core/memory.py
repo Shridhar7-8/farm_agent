@@ -91,9 +91,10 @@ class ConversationMemoryManager:
         """
         
         # Format recent conversations for context
-        recent_conversations_text = ""
+        recent_conversations_text = []
         for i, conv in enumerate(self.conversation_history, 1):
-            recent_conversations_text += f"\n{i}. Q: {conv['query']}\n   A: {conv['response'][:200]}{'...' if len(conv['response']) > 200 else ''}"
+            formatted = f"Q: {conv['query']}\nA: {conv['response'][:200]}{'...' if len(conv['response']) > 200 else ''}"
+            recent_conversations_text.append(formatted)
         
         # Build comprehensive context
         context = {

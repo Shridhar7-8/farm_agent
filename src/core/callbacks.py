@@ -3,6 +3,7 @@ from google.adk.models import LlmRequest, LlmResponse
 from google.genai import types
 import uuid
 from src.tools.utils import JsonUtils
+from src.config.config import config
 from typing import Optional
 from src.core.guardrails import guardrail_checker, GuardrailEvaluation
 from src.core.memory import enhanced_session_manager
@@ -25,21 +26,35 @@ def combined_callback(callback_context: CallbackContext, llm_request: LlmRequest
         return LlmResponse(content=types.Content(role="model", parts=[types.Part(text=blocking_msg)]))
 
     # Memory Injection (farmer + enriched)
-    # CallbackContext doesn't have session_id directly, so we'll use a default session
-    # The actual session management is handled in main.py
     session_id = getattr(callback_context, 'session_id', None) or "default_session"
     enriched = enhanced_session_manager.get_enriched_context(session_id)
-    
-    # Inject memory as user context since Gemini doesn't support multiple system messages
-    memory_context = f"""[CONTEXT] 🧠 **FARMER MEMORY & PROFILE**:\n{JsonUtils.safe_dumps(enriched)}\n---\n\nUser Query: """
-    
-    # Find the user message and prepend memory context to it
-    if llm_request.contents:
-        for content in llm_request.contents:
-            if content.role == 'user' and content.parts and content.parts[0].text:
-                # Prepend memory context to user message
-                original_text = content.parts[0].text
-                content.parts[0].text = memory_context + original_text
-                break
+
+    if enriched:
+        summarized_context = enriched.get("conversation_summary", "") or "No previous conversation history."
+        if len(summarized_context) > config.performance.max_memory_summary_chars:
+            summarized_context = summarized_context[: config.performance.max_memory_summary_chars] + "..."
+
+        recent_conversations = enriched.get("recent_conversations", "")
+        if isinstance(recent_conversations, str):
+            if len(recent_conversations) > config.performance.max_memory_recent_chars:
+                recent_conversations = recent_conversations[: config.performance.max_memory_recent_chars] + "..."
+        elif isinstance(recent_conversations, list):
+            recent_conversations = recent_conversations[: config.performance.max_memory_context_conversations]
+
+        filtered_context = {
+            "farmer_profile": enriched.get("farmer_profile", {}),
+            "conversation_summary": summarized_context,
+            "recent_conversations": recent_conversations,
+            "memory_status": enriched.get("memory_status", "")
+        }
+
+        memory_context = f"""[MEMORY]\n{JsonUtils.safe_dumps(filtered_context)}\n[/MEMORY]\n\nUser Query: """
+
+        if llm_request.contents:
+            for content in llm_request.contents:
+                if content.role == 'user' and content.parts and content.parts[0].text:
+                    original_text = content.parts[0].text
+                    content.parts[0].text = memory_context + original_text
+                    break
 
     return None

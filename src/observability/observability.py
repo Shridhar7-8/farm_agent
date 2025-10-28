@@ -10,6 +10,8 @@ import inspect
 from typing import Optional
 from functools import wraps
 
+from src.config.config import config
+
 # Initialize logger
 logger = logging.getLogger('farm_agent.observability')
 
@@ -29,6 +31,10 @@ def initialize_laminar() -> bool:
         logger.debug("Laminar already initialized, skipping...")
         return True
     
+    if not config.performance.enable_observability:
+        logger.info("Observability disabled via configuration flag")
+        return False
+
     try:
         # Check for API key
         api_key = os.getenv('LMNR_PROJECT_API_KEY')
