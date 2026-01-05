@@ -2,7 +2,7 @@
 
 **Advanced AI-powered farming assistant with production-grade architecture, memory management, and sequential planning capabilities.**
 
-## 🏗️ Project Structure (Refactored)
+## 🏗️ Project Structure
 
 ```
 FARM_AGENT/
@@ -141,5 +141,6 @@ The new structure provides clear separation:
 - [API Documentation](docs/api.md)
 
 ---
+
 
 **Built with ❤️ for farmers, powered by Google ADK and production-grade AI patterns.**
